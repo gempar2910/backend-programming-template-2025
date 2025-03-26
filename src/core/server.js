@@ -1,69 +1,53 @@
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const express = require('express');
 const pinoHTTP = require('pino-http');
+const methodOverride = require('method-override');
 
 const config = require('./config');
 const logger = require('./logger')('app');
-const routes = require('../api/routes');
+const routes = require('../api/routes'); // Pastikan path benar
 const { errorResponder, errorTypes } = require('./errors');
 
-const app = express();
+function createServer() {
+  const app = express();
 
-// Useful if behind a reverse proxy (Heroku, Bluemix, AWS ELB, Nginx, etc).
-// It shows the real origin IP in the Heroku or Cloudwatch logs.
-app.enable('trust proxy');
+  app.enable('trust proxy');
+  app.use(cors());
+  app.use(methodOverride('_method'));
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
+  app.use(pinoHTTP({ logger }));
 
-// Enable cross origin resource sharing to all origins by default
-app.use(cors());
+  logger.info('Middleware dan logging telah diinisialisasi');
 
-// Let you use HTTP verbs such as PUT or DELETE in places where the client doesn't support it
-app.use(require('method-override')());
-
-// Middleware that transforms the raw string of request.body into JSON
-app.use(bodyParser.json());
-
-// Needed to use multipart/form-data for file uploads
-app.use(bodyParser.urlencoded({ extended: false }));
-
-// Log HTTP requests with Pino
-app.use(pinoHTTP({ logger }));
-
-// API routes
-app.use(`${config.api.prefix}`, routes());
-
-// Handle 404 route
-app.use((request, response, next) =>
-  next(errorResponder(errorTypes.ROUTE_NOT_FOUND, 'Route not found'))
-);
-
-// Error loggers
-app.use((error, request, response, next) => {
-  const ctx = {
-    code: error.code,
-    status: error.status,
-    description: error.description,
-  };
-
-  // If this error is thrown by our code execution, then also log the stack trace
-  if (error.stack) {
-    ctx.stack = error.stack;
+  if (config.api && config.api.prefix) {
+    app.use(config.api.prefix, routes);
+    logger.info(`Routes telah dimuat di prefix: ${config.api.prefix}`);
+  } else {
+    app.use('/api', routes);
+    logger.warn('config.api.prefix tidak ditemukan, menggunakan /api');
   }
 
-  logger.error(ctx, error.toString());
+  // Middleware untuk menangani route yang tidak ditemukan (404)
+  app.use((req, res, next) => {
+    logger.warn(
+      `404 - Route tidak ditemukan: ${req.method} ${req.originalUrl}`
+    );
+    next(errorResponder(errorTypes.ROUTE_NOT_FOUND, 'Route not found'));
+  });
 
-  return next(error);
-});
+  // Middleware untuk menangani error
+  app.use((error, req, res, next) => {
+    logger.error({ error }, `Error terjadi: ${error.message}`);
+    res.status(error.status || 500).json({
+      statusCode: error.status || 500,
+      error: error.code || 'UNKNOWN_ERROR',
+      description: error.description || 'Unknown error',
+      message: error.message || 'An error has occurred',
+    });
+  });
 
-// Send error response to the caller
-// eslint-disable-next-line no-unused-vars
-app.use((error, request, response, next) =>
-  response.status(error.status || 500).json({
-    statusCode: error.status || 500,
-    error: error.code || 'UNKNOWN_ERROR',
-    description: error.description || 'Unknown error',
-    message: error.message || 'An error has occurred',
-  })
-);
+  return app;
+}
 
-module.exports = app;
+module.exports = createServer;

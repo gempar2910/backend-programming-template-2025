@@ -1,21 +1,21 @@
 const express = require('express');
+const booksController = require('./books-controller'); // Pastikan path benar
 
-const booksController = require('./books-controller');
+const router = express.Router();
 
-const route = express.Router();
+// Get list of books
+router.get('/', booksController.getBooks);
 
-module.exports = (app) => {
-  app.use('/books', route);
+// Get book by ID
+router.get('/:id', booksController.getBook);
 
-  // Get list of books
-  route.get('/', booksController.getBooks);
+// Create a new book
+router.post('/', booksController.createBook);
 
-  // Create a new book
-  route.post('/', booksController.createBook);
+// Update book by ID
+router.put('/:id', booksController.updateBook);
 
-  // TODO: Get a book by id
+// Delete book by ID
+router.delete('/:id', booksController.deleteBook);
 
-  // TODO: Update a book by id
-
-  // TODO: Delete a book by id
-};
+module.exports = router;
